@@ -6,13 +6,42 @@ on:
       - "news/**/*.md"
   workflow_dispatch:
     inputs:
-      markdown_file:
-        description: "news/2026-03-16.md"
+      mode:
+        description: "generate or send"
         required: true
+        default: "generate"
+      markdown_file:
+        description: "file path for send mode"
+        required: false
         default: ""
+  schedule:
+    - cron: "0 21 * * 0-4"
 
 jobs:
-  send-to-discord:
+  generate-and-send:
+    if: >-
+      github.event_name == 'schedule' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'generate')
+    runs-on: ubuntu-latest
+    steps:
+      - name: checkout
+        uses: actions/checkout@v4
+      - name: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: install-deps
+        run: pip install yfinance
+      - name: generate-and-send
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: python scripts/generate_and_send.py
+
+  send-existing:
+    if: >-
+      github.event_name == 'push' ||
+      (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'send')
     runs-on: ubuntu-latest
     steps:
       - name: checkout
@@ -39,5 +68,4 @@ jobs:
       - name: send-to-discord
         env:
           DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
-        run: |
-          python scripts/send_to_discord.py "${{ steps.find_file.outputs.file }}"
+        run: python scripts/send_to_discord.py "${{ steps.find_file.outputs.file }}"
