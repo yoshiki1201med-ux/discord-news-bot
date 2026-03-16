@@ -181,12 +181,32 @@ def generate_article(market_text, holdings_text):
         },
         method="POST",
     )
-    try:
-        with urllib.request.urlopen(req, timeout=120) as resp:
-            result = json.loads(resp.read().decode("utf-8"))
-    except urllib.error.HTTPError as e:
-        body = e.read().decode("utf-8", errors="replace")
-        print(f"Claude API Error {e.code}: {body}", file=sys.stderr)
+    result = None
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=180) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+            break
+        except urllib.error.HTTPError as e:
+            body = e.read().decode("utf-8", errors="replace")
+            if e.code == 429 and attempt < 2:
+                print(f"Rate limited, waiting 60s... (attempt {attempt + 1}/3)")
+                time.sleep(60)
+                req = urllib.request.Request(
+                    "https://api.anthropic.com/v1/messages",
+                    data=data,
+                    headers={
+                        "Content-Type": "application/json",
+                        "x-api-key": ANTHROPIC_API_KEY,
+                        "anthropic-version": "2023-06-01",
+                    },
+                    method="POST",
+                )
+            else:
+                print(f"Claude API Error {e.code}: {body}", file=sys.stderr)
+                sys.exit(1)
+    if result is None:
+        print("Claude API failed after retries", file=sys.stderr)
         sys.exit(1)
     text_parts = []
     for block in result.get("content", []):
