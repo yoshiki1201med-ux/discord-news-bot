@@ -51,6 +51,11 @@ def fetch_market_data():
             print(f"Warning: {name} failed: {e}")
     return results
 
+def get_nikkei_futures_pct(market_data):
+    if market_data and "日経225先物" in market_data:
+        return market_data["日経225先物"]["change_pct"]
+    return 0.0
+
 def format_market_data(data):
     if not data:
         return "(market data unavailable)"
@@ -70,7 +75,25 @@ def load_holdings():
         data = json.load(f)
     return data.get("holdings", [])
 
-def fetch_holdings_data(holdings):
+def fetch_pts_price(code):
+    """kabutanからPTS価格を取得。失敗したらNone"""
+    try:
+        url = f"https://kabutan.jp/stock/?code={code}"
+        req = urllib.request.Request(url, headers={
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+        })
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            html = resp.read().decode("utf-8", errors="replace")
+        pts_match = re.search(r'PTS.*?(\d[\d,]*\.?\d*)\s*円', html, re.DOTALL)
+        if pts_match:
+            price = float(pts_match.group(1).replace(",", ""))
+            print(f"  PTS found for {code}: {price}")
+            return price
+    except Exception as e:
+        print(f"  PTS fetch failed for {code}: {e}")
+    return None
+
+def fetch_holdings_data(holdings, nikkei_futures_pct):
     if not holdings:
         return "(holdings not configured)"
     try:
@@ -83,17 +106,33 @@ def fetch_holdings_data(holdings):
             t = yf.Ticker(h["ticker"])
             hist = t.history(period="5d")
             if len(hist) < 2:
-                lines.append(f"| {h['name']} | - | - | - |")
+                lines.append(f"| {h['name']} | - | - | - | - |")
                 continue
             latest = hist.iloc[-1]
             prev = hist.iloc[-2]
             close_val = latest["Close"]
             change_pct = ((close_val - prev["Close"]) / prev["Close"]) * 100
+
+            # PTS価格を取得
+            code = h["ticker"].replace(".T", "")
+            pts_price = fetch_pts_price(code)
+            if pts_price and pts_price != close_val:
+                pts_change_pct = ((pts_price - close_val) / close_val) * 100
+                pts_text = f"{pts_price:,.0f} ({'+' if pts_change_pct > 0 else ''}{pts_change_pct:.1f}%)"
+                # 天気スコアにはPTSの変動も加味
+                effective_daily = change_pct + pts_change_pct * 0.5
+            else:
+                pts_text = "-"
+                effective_daily = change_pct
+
             if len(hist) >= 5:
                 week_change = ((close_val - hist.iloc[0]["Close"]) / hist.iloc[0]["Close"]) * 100
             else:
                 week_change = change_pct
-            score = change_pct * 0.6 + week_change * 0.4
+
+            # 天気スコア: 前日比 + 週間 + 日経先物補正 + PTS補正
+            score = effective_daily * 0.4 + week_change * 0.3 + nikkei_futures_pct * 0.3
+
             if score >= 3:
                 weather = "☀️快晴"
             elif score >= 1:
@@ -104,14 +143,17 @@ def fetch_holdings_data(holdings):
                 weather = "🌧️雨"
             else:
                 weather = "⛈️嵐"
+
             sign = "+" if change_pct > 0 else ""
             wsign = "+" if week_change > 0 else ""
-            lines.append(f"| {weather} {h['name']} | {close_val:,.1f} | {sign}{change_pct:.2f}% | {wsign}{week_change:.1f}% |")
+            lines.append(f"| {weather} {h['name']} | {close_val:,.1f} | {sign}{change_pct:.2f}% | {wsign}{week_change:.1f}% | {pts_text} |")
+            time.sleep(0.5)
         except Exception as e:
-            lines.append(f"| ? {h['name']} | - | error | - |")
+            lines.append(f"| ? {h['name']} | - | error | - | - |")
             print(f"Warning: {h['name']} failed: {e}")
-    header = "| 銘柄 | 終値 | 前日比 | 週間 |\n|------|------|--------|------|\n"
-    return header + "\n".join(lines)
+    header = "| 銘柄 | 終値 | 前日比 | 週間 | PTS |\n|------|------|--------|------|-----|\n"
+    footer = f"\n*先物補正: 日経先物 {'+' if nikkei_futures_pct > 0 else ''}{nikkei_futures_pct:.2f}% を天気スコアに反映*"
+    return header + "\n".join(lines) + footer
 
 def generate_article(market_text, holdings_text):
     today = datetime.date.today().strftime("%Y年%m月%d日")
@@ -295,15 +337,18 @@ def main():
         print("DISCORD_WEBHOOK_URL not set", file=sys.stderr)
         sys.exit(1)
     print("=" * 50)
-    print("AI朝刊 自動生成・配信")
+    print("AI朝刊 自動生成・配信 v2")
+    print("PTS + 日経先物補正対応")
     print("=" * 50)
     print("\n[1/4] 市場データ取得中...")
     market_data = fetch_market_data()
     market_text = format_market_data(market_data)
+    nikkei_pct = get_nikkei_futures_pct(market_data)
     print(market_text)
-    print("\n[2/4] 手持ち株データ取得中...")
+    print(f"\n日経先物変動率: {nikkei_pct:+.2f}% (天気補正に使用)")
+    print("\n[2/4] 手持ち株データ + PTS取得中...")
     holdings = load_holdings()
-    holdings_text = fetch_holdings_data(holdings)
+    holdings_text = fetch_holdings_data(holdings, nikkei_pct)
     print(holdings_text)
     print("\n[3/4] Claude APIで記事生成中...")
     article = generate_article(market_text, holdings_text)
