@@ -1,14 +1,12 @@
 {
   "holdings": [
-    {
-      "ticker": "7203.T",
-      "name": "トヨタ自動車",
-      "memo": "サンプル（後で差し替え）"
-    },
-    {
-      "ticker": "6758.T",
-      "name": "ソニーグループ",
-      "memo": "サンプル（後で差し替え）"
-    }
+    {"ticker": "6613.T", "name": "QDレーザ"},
+    {"ticker": "4588.T", "name": "オンコリスバイオファーマ"},
+    {"ticker": "6965.T", "name": "浜松ホトニクス"},
+    {"ticker": "513A.T", "name": "GX防衛テック"},
+    {"ticker": "5724.T", "name": "アサカ理研"},
+    {"ticker": "6366.T", "name": "千代田化工建設"},
+    {"ticker": "4563.T", "name": "アンジェス"},
+    {"ticker": "218A.T", "name": "Liberaware"}
   ]
 }
