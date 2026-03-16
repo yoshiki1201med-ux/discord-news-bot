@@ -1,0 +1,51 @@
+name: AI朝刊 → Discord 自動配信
+
+on:
+  push:
+    paths:
+      - "news/**/*.md"
+
+  workflow_dispatch:
+    inputs:
+      markdown_file:
+        description: "配信するMarkdownファイルのパス（例: news/2026-03-16.md）"
+        required: true
+        default: ""
+
+jobs:
+  send-to-discord:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: リポジトリをチェックアウト
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2
+
+      - name: Python セットアップ
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: 配信対象ファイルを特定
+        id: find_file
+        run: |
+          if [ -n "${{ github.event.inputs.markdown_file }}" ]; then
+            FILE="${{ github.event.inputs.markdown_file }}"
+          else
+            FILE=$(git diff --name-only HEAD~1 HEAD -- 'news/**/*.md' | head -1)
+          fi
+
+          if [ -z "$FILE" ] || [ ! -f "$FILE" ]; then
+            echo "❌ 配信対象ファイルが見つかりません"
+            exit 1
+          fi
+
+          echo "file=$FILE" >> "$GITHUB_OUTPUT"
+          echo "📄 配信対象: $FILE"
+
+      - name: Discord に配信
+        env:
+          DISCORD_WEBHOOK_URL: ${{ secrets.DISCORD_WEBHOOK_URL }}
+        run: |
+          python scripts/send_to_discord.py "${{ steps.find_file.outputs.file }}"
