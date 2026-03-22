@@ -9,7 +9,7 @@ import datetime
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
 DISCORD_WEBHOOK_URL = os.environ.get("DISCORD_WEBHOOK_URL", "")
-MODEL = "claude-sonnet-4-20250514"
+MODEL = "claude-haiku-4-5-20251001"
 CONFIG_DIR = os.path.join(os.path.dirname(__file__), "..", "config")
 NEWS_DIR = os.path.join(os.path.dirname(__file__), "..", "news")
 MAX_EMBED_DESC = 4096
